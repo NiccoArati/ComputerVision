@@ -1,0 +1,14 @@
+torch
+torchvision
+torchaudio
+pandas
+openpyxl
+pathlib
+wandb
+matplotlib
+pillow
+grad-cam
+scikit-learn
+seaborn
+peft
+torchmetrics
