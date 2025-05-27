@@ -7,13 +7,14 @@ from torch.utils.data import DataLoader, Subset
 from transformers import ViTForImageClassification
 from peft import LoraConfig, get_peft_model
 
+
 def extract_features(model, dataloader, device='cuda'):
     model.eval()
     features = []
     labels_list = []
 
     with torch.no_grad():
-        for images, labels in dataloader:
+        for images, labels, _ in dataloader:
             images = images.to(device)
             outputs = model(images, output_hidden_states=True)
 
@@ -26,6 +27,7 @@ def extract_features(model, dataloader, device='cuda'):
 
     features = torch.cat(features, dim=0).numpy()
     return features, np.array(labels_list)
+
 
 def run_tsne(features, labels, save_path=None):
     tsne = TSNE(n_components=2, random_state=42, perplexity=30)
@@ -42,6 +44,7 @@ def run_tsne(features, labels, save_path=None):
         plt.savefig(save_path, bbox_inches='tight')
         print(f"t-SNE plot saved to {save_path}")
     plt.show()
+
 
 def main(labels_file, img_directory, default_parcel, model_path, save_path, lora):
     train_transforms = transforms.Compose([  

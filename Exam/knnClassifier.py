@@ -49,7 +49,7 @@ def main(labels_file, img_directory, default_parcel):
 
     with torch.no_grad():
         for data in dataloader:
-            images, labels_dl = data
+            images, labels_dl, _ = data
             images = images.to(device)
             output = model(images) # Extract 768-dim feature vector from ViT-B/16
             cls_embedding = output.last_hidden_state[:, 0, :] 

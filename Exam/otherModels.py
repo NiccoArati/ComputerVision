@@ -7,7 +7,7 @@ from torch.utils.data import DataLoader, Subset
 from transformers import ViTForImageClassification, AutoModelForImageClassification
 
 
-def chFineTuningResNet(model, trainloader, testloader, mixUp, lora=False, device='cuda'):
+def chFineTuningOther(model, trainloader, testloader, mixUp, lora=False, device='cuda'):
     run = wandb.init(
     # Set the project where this run will be logged
     project="Computer Vision ViT hf Final Tests foo",
@@ -58,7 +58,8 @@ def chFineTuningResNet(model, trainloader, testloader, mixUp, lora=False, device
     wandb.finish()
     return test_loss, test_acc
 
-def layerFineTuningResNet(model, trainloader, testloader, mixUp, toFinetune=1, device='cuda'):
+
+def layerFineTuningOther(model, trainloader, testloader, mixUp, toFinetune=1, device='cuda'):
     run = wandb.init(
     # Set the project where this run will be logged
     project="Computer Vision ViT hf Final Tests foo",
@@ -121,6 +122,7 @@ def layerFineTuningResNet(model, trainloader, testloader, mixUp, toFinetune=1, d
     wandb.finish()
     return test_loss, test_acc
 
+
 def main(labels_file, img_directory, default_parcel, fineTuning, vit):
     wandb.login()
     train_transforms = transforms.Compose([  
@@ -180,8 +182,8 @@ def main(labels_file, img_directory, default_parcel, fineTuning, vit):
             model.classifier = torch.nn.Sequential(
                 torch.nn.Flatten(),  # Converts [B, 512, 1, 1] -> [B, 512]
                 torch.nn.Linear(512, 3)
-            ) # TODO when running this code, change in ViTFineTuning.py model.classifier[1].weight.requires_grad = True
-        test_loss, test_acc = chFineTuningResNet(model, trainloader, testloader, False, device='cuda')
+            )
+        test_loss, test_acc = chFineTuningOther(model, trainloader, testloader, False, device='cuda')
     
     else:
         # fine tuning last layer
@@ -201,8 +203,8 @@ def main(labels_file, img_directory, default_parcel, fineTuning, vit):
             model.classifier = torch.nn.Sequential(
                 torch.nn.Flatten(),  # Converts [B, 512, 1, 1] -> [B, 512]
                 torch.nn.Linear(512, 3)
-            ) # TODO when running this code, change in ViTFineTuning.py model.classifier[1].weight.requires_grad = True
-        test_loss, test_acc = layerFineTuningResNet(model, trainloader, testloader, False, toFinetune=fineTuning, device='cuda')
+            )
+        test_loss, test_acc = layerFineTuningOther(model, trainloader, testloader, False, toFinetune=fineTuning, device='cuda')
 
 
 if __name__ == "__main__":

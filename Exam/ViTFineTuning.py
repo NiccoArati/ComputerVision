@@ -1,7 +1,6 @@
 from datasetStudy import *
 from torch.utils.data import DataLoader, Subset
 import torch
-import torchvision.models as models
 import torchvision.transforms as transforms
 from torchvision.transforms import v2
 import matplotlib.pyplot as plt
@@ -16,11 +15,6 @@ from pytorch_grad_cam import GradCAM, EigenGradCAM, ScoreCAM
 from pytorch_grad_cam.utils.image import show_cam_on_image
 from peft import LoraConfig, get_peft_model
 
-#TODO matrice di confusione DONE
-#TODO MLP invece di linear layer con classification head DONE
-#TODO tsne DONE
-#TODO provare con modelli più grossi (L14, H14)
-#TODO prova focal loss, paper e concatenare patch a input
 
 # To train a MLP on top of classification head
 class CustomMLPHead(torch.nn.Module):
@@ -35,6 +29,7 @@ class CustomMLPHead(torch.nn.Module):
 
     def forward(self, x):
         return self.mlp(x)
+
 
 def train(model, optimizer, trainloader, criterion, epoch, mixUp, alpha=0.0, device='cuda'):
     model.train()
@@ -66,6 +61,7 @@ def train(model, optimizer, trainloader, criterion, epoch, mixUp, alpha=0.0, dev
     print(f"Epoch {epoch} mean loss: {np.mean(train_losses)}")
     return np.mean(train_losses)
 
+
 def plot_confusion_matrix(cm, class_names=[0, 1, 2], save_path=None):
     plt.figure(figsize=(6, 5))
     sns.heatmap(cm, annot=True, fmt='.2f', cmap='Blues',
@@ -79,7 +75,8 @@ def plot_confusion_matrix(cm, class_names=[0, 1, 2], save_path=None):
         print(f"Confusion matrix saved to {save_path}")
     plt.close()
 
-def test(model, testloader, criterion, device='cuda'):
+
+def test(model, testloader, criterion, cm_output_file_path="", device='cuda'):
     model.eval()
     test_loss = 0
     correct = 0
@@ -111,17 +108,18 @@ def test(model, testloader, criterion, device='cuda'):
     test_acc = correct / len(testloader.dataset)
     class_accuracy = {cls: (class_correct[cls] / class_total[cls]) if class_total[cls] > 0 else 0.0 for cls in class_total}
     mean_test_loss = test_loss / len(testloader.dataset)
-    cm = confusion_matrix(all_labels, all_predictions, labels=[0, 1, 2])
-
     print(f"Test accuracy: {test_acc:.3f}")
     for cls, acc in class_accuracy.items():
         print(f"Class {cls} Accuracy: {acc:.2f}")
-    plot_confusion_matrix(cm, class_names=["Class 0", "Class 1", "Class 2"], save_path="/home/narati/cnr/confusionM/cm_model_all.jpg")
+    
+    if cm_output_file_path:
+        cm = confusion_matrix(all_labels, all_predictions, labels=[0, 1, 2])
+        plot_confusion_matrix(cm, class_names=["Class 0", "Class 1", "Class 2"], save_path=cm_output_file_path)
 
     return mean_test_loss, test_acc, class_accuracy
 
 
-def chFineTuning(model, trainloader, testloader, mixUp, lora=False, device='cuda'):
+def chFineTuning(model, trainloader, testloader, mixUp, cm_output_file_path, lora=False, device='cuda'):
     run = wandb.init(
     # Set the project where this run will be logged
     project="Computer Vision ViT hf Final Tests CM",
@@ -160,19 +158,20 @@ def chFineTuning(model, trainloader, testloader, mixUp, lora=False, device='cuda
         print(f"Epoch {epoch} mean Loss: {train_loss}")
         scheduler.step()
 
-        val_loss, val_acc, class_acc = test(model, testloader, criterion, device=device)
+        val_loss, val_acc, class_acc = test(model, testloader, criterion, cm_output_file_path, device=device)
         print(val_acc)
         val_metrics = {"Val_accuracy": val_acc}
         wandb.log({**metrics, **val_metrics})
     
     #torch.save(model.state_dict(), "model.pth")
-    test_loss, test_acc, class_acc = test(model, testloader, criterion, device=device)
+    test_loss, test_acc, class_acc = test(model, testloader, criterion, cm_output_file_path, device=device)
     test_metrics = {"Test Accuracy": test_acc}
     wandb.log({**test_metrics}, **{f"Class {cls} Accuracy": acc for cls, acc in class_acc.items()})
     wandb.finish()
     return test_loss, test_acc
 
-def layerFineTuning(model, trainloader, testloader, mixUp, toFinetune=1, device='cuda'):
+
+def layerFineTuning(model, trainloader, testloader, mixUp, cm_output_file_path, toFinetune=1, device='cuda'):
     run = wandb.init(
     # Set the project where this run will be logged
     project="Computer Vision ViT hf Final Tests CM",
@@ -214,13 +213,13 @@ def layerFineTuning(model, trainloader, testloader, mixUp, toFinetune=1, device=
         print(f"Epoch {epoch} mean Loss: {train_loss}")
         scheduler.step()
 
-        val_loss, val_acc, class_acc = test(model, testloader, criterion, device=device)
+        val_loss, val_acc, class_acc = test(model, testloader, criterion, cm_output_file_path, device=device)
         print(val_acc)
         val_metrics = {"Val_accuracy": val_acc}
         wandb.log({**metrics, **val_metrics})
     
     #torch.save(model.state_dict(), "model.pth")
-    test_loss, test_acc, class_acc = test(model, testloader, criterion, device)
+    test_loss, test_acc, class_acc = test(model, testloader, criterion, cm_output_file_path, device)
     test_metrics = {"Test Accuracy": test_acc}
     wandb.log({**test_metrics, **{f"Class {cls} Accuracy": acc for cls, acc in class_acc.items()}})
     wandb.finish()
@@ -464,7 +463,7 @@ def gradCAM(test_set, model_trained, originalImg_path, gradCAM_path, avgCAM_path
         print("No predictions of Class 3 were right")
 
 
-def main(labels_file, img_directory, default_parcel, fineTuning, num_layer, gradcam, model_trained, img_path, gradCAM_path, avgCAM_path, mixUp, lora):
+def main(labels_file, img_directory, default_parcel, fineTuning, num_layer, gradcam, model_trained, img_path, gradCAM_path, avgCAM_path, cm_path, mixUp, lora):
     wandb.login()
     train_transforms = transforms.Compose([  
     transforms.RandomResizedCrop(224, scale=(0.8, 1.0)),
@@ -538,7 +537,7 @@ def main(labels_file, img_directory, default_parcel, fineTuning, num_layer, grad
         if gradcam:
             gradCAM(test_set, model_trained, img_path, gradCAM_path, avgCAM_path, model, device='cuda')
         else:
-            test_loss, test_acc = chFineTuning(model, trainloader, testloader, mixUp, lora, device='cuda')
+            test_loss, test_acc = chFineTuning(model, trainloader, testloader, mixUp, cm_path, lora, device='cuda')
 
     else:
         # fine tuning last layer
@@ -552,8 +551,7 @@ def main(labels_file, img_directory, default_parcel, fineTuning, num_layer, grad
         if gradcam:
             gradCAM(test_set, model_trained, img_path, gradCAM_path, avgCAM_path, model, device='cuda')
         else:
-            test_loss, test_acc = layerFineTuning(model, trainloader, testloader, mixUp, toFinetune=fineTuning, device='cuda')
-        
+            test_loss, test_acc = layerFineTuning(model, trainloader, testloader, mixUp, cm_path, toFinetune=fineTuning, device='cuda')
     
 
 if __name__ == "__main__":
@@ -569,6 +567,7 @@ if __name__ == "__main__":
     parser.add_argument("--originalImg_path", type=str, required=False, help="if gradCAM is True, path where to save original image")
     parser.add_argument("--gradCAM_path", type=str, required=False, help="if gradCAM is True, path where to save image with heatmap")
     parser.add_argument("--avgCAM_path", type=str, required=False, help="if gradCAM is True, path where to save average cams")
+    parser.add_argument("--cm_path", type=str, required=False, help="if not empty, file path where to save confusion matrix")
     parser.add_argument("--mixUp", action="store_true", help="performs MixUp data augmentation")
     parser.add_argument("--noMixUp", action="store_false", dest="mixUp", help="does not perform MixUp")
     parser.add_argument("--loRA", action="store_true", help="performs LoRA")
@@ -576,4 +575,4 @@ if __name__ == "__main__":
     args = parser.parse_args()
     main(labels_file=args.labels_file, img_directory=args.img_directory, default_parcel=args.default_parcel, fineTuning=args.fineTuning,
          num_layer=args.linearLayers, gradcam=args.gradCAM, model_trained=args.model, img_path=args.originalImg_path, gradCAM_path=args.gradCAM_path,
-         avgCAM_path=args.avgCAM_path, mixUp=args.mixUp, lora=args.loRA)
+         avgCAM_path=args.avgCAM_path, cm_path=args.cm_path, mixUp=args.mixUp, lora=args.loRA)

@@ -2,6 +2,7 @@ from ViTFineTuning import *
 from datasetStudy import *
 from sklearn.model_selection import KFold
 
+
 def main(labels_file, img_directory, default_parcel, fineTuning):
     wandb.login()
     train_transforms = transforms.Compose([  
@@ -11,7 +12,7 @@ def main(labels_file, img_directory, default_parcel, fineTuning):
     transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
     ])
     test_transforms = transforms.Compose([
-    transforms.Resize((224, 224)),  # Resize to ViT input size
+    transforms.Resize((224, 224)),
     transforms.ToTensor(),
     transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
     ])
@@ -74,6 +75,7 @@ def main(labels_file, img_directory, default_parcel, fineTuning):
         criterion = torch.nn.CrossEntropyLoss(label_smoothing=run.config["label_smoothing"])    
         
         # Training loop
+        dataset.transform = train_transforms
         train_losses = []
         for epoch in range(1, run.config["epochs"] + 1):
             print(f"Training, epoch {epoch}")
@@ -89,6 +91,7 @@ def main(labels_file, img_directory, default_parcel, fineTuning):
             wandb.log({**metrics, **val_metrics})
         
         # Validation loop
+        dataset.transform = test_transforms
         torch.save(model.state_dict(), "model.pth")
         test_loss, test_acc, class_acc = test(model, valloader, criterion, device)
         test_metrics = {f"Test Accuracy {fold}": test_acc}

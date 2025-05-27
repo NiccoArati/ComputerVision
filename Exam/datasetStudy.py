@@ -101,6 +101,7 @@ def group_images_by_parcel(excel_file, default_parcel):
 
     return parcels, parcel_class
 
+
 # Returns parcel ids split into 5 different train and test
 def create_splits(parcel_class, n_splits=5):
     class_to_parcels = defaultdict(list)
@@ -117,6 +118,7 @@ def create_splits(parcel_class, n_splits=5):
     
     return splits
 
+
 def print_image_class_distribution(all_parcels, parcels):
     labels = []
 
@@ -130,6 +132,7 @@ def print_image_class_distribution(all_parcels, parcels):
     print("Image class distribution in parcels:")
     for cls in sorted(class_distribution):
         print(f"Class {cls}: {class_distribution[cls]} images")
+
 
 def print_parcel_image_distribution(parcels, parcel_class):
     class_presence = defaultdict(list)
@@ -150,6 +153,7 @@ def print_parcel_image_distribution(parcels, parcel_class):
             percent = 100 * label_counts[cls] / total
             print(f"  Class {cls}: {percent:.2f}%")
         print()
+
 
 def print_test_folds_class_presence(parcels, splits):
     for fold_idx, (train_parcels, test_parcels) in enumerate(splits):

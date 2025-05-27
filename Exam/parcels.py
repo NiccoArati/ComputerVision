@@ -1,9 +1,10 @@
 from ViTFineTuning import *
 from datasetStudy import *
 from sklearn.model_selection import KFold
+from collections import defaultdict
+import torch.nn.functional as F
 from torch.utils.data import WeightedRandomSampler
 import random
-from collections import defaultdict
 
 
 # During training -> same number of samples for each class
@@ -13,7 +14,8 @@ def create_balanced_sampler(labels):
     sampler = WeightedRandomSampler(weights, len(weights))
     return sampler
 
-def testFold(model, testloader, criterion, device='cuda'):
+
+def testFold(model, testloader, criterion, scores=False, img_output_dir="", device='cuda'):
     model.eval()
     test_loss = 0
     correct = 0
@@ -102,11 +104,43 @@ def testFold(model, testloader, criterion, device='cuda'):
     
     cm2 = confusion_matrix(all_parcel_labels, all_parcel_predictions, labels=[0, 1, 2])
 
+    if scores:
+        print("Plotting scores")
+        with torch.no_grad():
+            for idx, (images, labels, parcels) in enumerate(testloader):  # Assuming parcels are there too
+                images, labels = images.to(device), labels.to(device)
+                
+                output = model(images)
+                logits = output.logits  # (batch_size, num_classes)
+                probs = F.softmax(logits, dim=1)  # Convert to probabilities
+                
+                for i in range(images.size(0)):
+                    print(f"Plotting image {i} of batch {idx}")
+                    img = images[i].cpu()
+                    label = labels[i].item()
+                    prob = probs[i].cpu().numpy()
+
+                    # If your images were normalized, you might want to denormalize them for plotting
+                    inv_transform = transforms.Normalize(
+                        mean=[-0.5/0.5, -0.5/0.5, -0.5/0.5],  # Example for mean=0.5, std=0.5
+                        std=[1/0.5, 1/0.5, 1/0.5]
+                    )
+                    img = inv_transform(img)
+                    img = torch.clamp(img, 0, 1)  # Clip values to valid range
+
+                    # Plot
+                    plt.figure(figsize=(5, 4))
+                    plt.imshow(img.permute(1, 2, 0))  # C x H x W -> H x W x C
+                    plt.axis('off')
+                    plt.title(f"True Label: {label}, Scores: {prob.round(2)} \n Parcel True Label: {parcel_true_labels[parcels[i]]}, Parcel Predicted Label: {parcel_final_preds[parcels[i]]}")
+                    plt.savefig(img_output_dir + f"/image_{idx}_{i}.jpg")
+
     return mean_test_loss, test_acc, class_accuracy, cm, cm2, parcel_acc, parcel_class_acc
 
-def main(labels_file, img_directory, default_parcel, cmPath, fineTuning, k, lora):
+
+def main(labels_file, img_directory, default_parcel, cmPath, fineTuning, k, lora, saveImgs, img_output_dir):
     wandb.login()
-    train_transforms = transforms.Compose([
+    train_transforms = transforms.Compose([  
     transforms.RandomResizedCrop(224, scale=(0.8, 1.0)),
     transforms.RandomHorizontalFlip(p=0.5),
     transforms.ToTensor(),
@@ -133,19 +167,19 @@ def main(labels_file, img_directory, default_parcel, cmPath, fineTuning, k, lora
 
     run = wandb.init(
         # Set the project where this run will be logged
-        project="Computer Vision ViT hf Balanced Parcels",
+        project="Computer Vision ViT hf Parcels",
         # Pass a run name
-        name=f"ViT_b_16 5-Fold LoRA ls=0.05 FINAL",
+        name=f"ViT_b_16 5-Fold 6-2 Final scores",
         # Track hyperparameters and run metadata
         config={
         "learning_rate": 1e-2,
         "momentum": 0.9,
         "learning_rate2": 1e-3,
         "weight_decay": 1e-4,
-        "milestones": [35, 60, 85],
+        "milestones": [25, 50, 85],
         "gamma": 0.1,
         "alpha_mixUp": 0.0,
-        "label_smoothing": 0.05,
+        "label_smoothing": 0.0,
         "architecture": "ViT_b_16",
         "dataset": "cnr",
         "epochs": 100})
@@ -172,7 +206,7 @@ def main(labels_file, img_directory, default_parcel, cmPath, fineTuning, k, lora
             for file_name, label in parcels[parcel_id]:
                 test_files.append(file_name)
                 test_labels.append(label)
-   
+        
         train_dataset = CustomImageDataset(labels_file, img_directory, default_parcel, transform=train_transforms, file_filter=train_files)
         train_labels = train_dataset.labels # Use labels after filtering invalid file names
         test_dataset = CustomImageDataset(labels_file, img_directory, default_parcel, transform=test_transforms, file_filter=test_files)
@@ -237,13 +271,16 @@ def main(labels_file, img_directory, default_parcel, cmPath, fineTuning, k, lora
             print(f"Epoch {epoch} mean Loss: {train_loss}")
             scheduler.step()
 
-            val_loss, val_acc, class_acc, _, _, parcel_acc, parcel_class_acc = testFold(model, testloader, criterion, device=device)
+            val_loss, val_acc, class_acc, _, _, parcel_acc, parcel_class_acc = testFold(model, testloader, criterion, False, device=device)
             val_metrics = {f"Val_accuracy {fold}": val_acc, f"Parcel_accuracy {fold}": parcel_acc}
             wandb.log({**metrics, **val_metrics})
         
         # Test loop
-        #torch.save(model.state_dict(), "model.pth")
-        test_loss, test_acc, class_acc, cm, cm2, test_parcel_acc, test_parcel_class_acc = testFold(model, testloader, criterion, device)
+        if saveImgs and fold == 1:
+            print("Test Fold 2")
+            test_loss, test_acc, class_acc, cm, cm2, test_parcel_acc, test_parcel_class_acc = testFold(model, testloader, criterion, True, img_output_dir, device=device)
+        else:    
+            test_loss, test_acc, class_acc, cm, cm2, test_parcel_acc, test_parcel_class_acc = testFold(model, testloader, criterion, False, device=device)
         test_metrics = {f"Test Accuracy {fold}": test_acc, f"Test Parcel Accuracy {fold}": test_parcel_acc}
         wandb.log({**test_metrics, **{f"Class {cls} Accuracy {fold}": acc for cls, acc in class_acc.items()}, **{f"Class {cls} Parcel Accuracy {fold}": acc for cls, acc in test_parcel_class_acc.items()}})
         print(f"Fold {fold+1} Accuracy: {test_acc:.2f}%")
@@ -307,6 +344,9 @@ if __name__ == "__main__":
     parser.add_argument("--kFold", type=int, required=True, help="number of folds for k-fold cross validation")
     parser.add_argument("--loRA", action="store_true", help="performs LoRA")
     parser.add_argument("--noLoRA", action="store_false", dest="loRA", help="does not perform LoRA")
+    parser.add_argument("--saveImgs", action="store_true", help="saves image examples with scores")
+    parser.add_argument("--noSaveImgs", action="store_false", dest="saveImgs", help="does not saves image examples")
+    parser.add_argument("--img_output_dir", type=str, required=False, help="if saveImgs, path where to save the example images")
     args = parser.parse_args()
-    main(labels_file=args.labels_file, img_directory=args.img_directory, default_parcel=args.default_parcel,
-         cmPath=args.cmPath, fineTuning=args.fineTuning, k=args.kFold, lora=args.loRA)
+    main(labels_file=args.labels_file, img_directory=args.img_directory, default_parcel=args.default_parcel, cmPath=args.cmPath,
+         fineTuning=args.fineTuning, k=args.kFold, lora=args.loRA, saveImgs=args.saveImgs, img_output_dir=args.img_output_dir)
